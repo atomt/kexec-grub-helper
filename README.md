@@ -1,8 +1,8 @@
 # kexec-grub-helper
 
-kexec helper to load kernels from GRUB configuration.
+kexec helper to load kernels from your systems GRUB configuration. It has a selector, supports grubenv defaults and stuff.
 
-kexec is awesome. People should use it more.
+kexec allows for very spiffy reboots, bypassing firmware initialization entirely. It also does other stuff not covered by this helper thingy. kexec is awesome and people should use it more.
 
 ## Usage
 
@@ -40,5 +40,6 @@ You probably have the rest on your system already, but for completeness they are
 * whiptail
 * bash 4.2 or later
 * awk
+* sed
 * coreutils (for head, tail)
 * grep
