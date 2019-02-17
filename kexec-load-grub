@@ -82,10 +82,6 @@ grub_cfg_load() {
   local menuindex=0
   local begin=0
   local length=0
-  local name=""
-  local kernel_image=""
-  local append=""
-  local initrd=""
 
   for grubindex in ${!offsets[@]}; do
     begin=${offsets[$grubindex]}
