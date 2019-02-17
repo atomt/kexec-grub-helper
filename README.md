@@ -31,6 +31,7 @@ A makefile is provided but it's really just a simple script. Run it directly, st
 ### Requirements
 
 * kexec-tools
+* GRUB2 has to be your bootloader
 
 You probably have the rest on your system already, but for completeness they are listed here:
 
