@@ -91,20 +91,13 @@ grub_cfg_load() {
     begin=${offsets[$grubindex]}
     length=$(echo "$GRUBDATA" | tail -n+$begin | grep -n -m 1 '^[[:space:]]*}[[:space:]]*' | cut -d: -f1)
 
-    name=""
-    kernel_image=""
-    append=""
-    initrd=""
+    grub_parse_entry "$(echo "$GRUBDATA" | tail -n+$begin | head -n$length)"
 
-    set +u
-    eval $(echo "$GRUBDATA" | tail -n+$begin | head -n$length | grub_parse_entry)
-    set -u
-
-    if [[ ! -z $kernel_image ]]; then
-      MENUENTRY+=("$name")
-      KERNELS+=("$kernel_image")
-      INITRDS+=("$initrd")
-      KARGS+=("$append")
+    if [[ ! -z $entry_kernel_image ]]; then
+      MENUENTRY+=("$entry_name")
+      KERNELS+=("$entry_kernel_image")
+      INITRDS+=("$entry_initrd")
+      KARGS+=("$entry_append")
       # grub_default_load needs to map from name to menu index; grub index to menu index
       GRUBINDEX[$grubindex]=$menuindex
       menuindex=$(($menuindex + 1))
@@ -136,33 +129,31 @@ grub_default_load() {
   fi
 }
 
-grub_parse_name() {
-  eval set -- "$1"
-  echo name=\"$1\"
-}
-
 grub_parse_entry() {
-  local initrd_image=
+  local data="$1"
+  entry_name=""
+  entry_kernel_image=""
+  entry_append=""
+  entry_initrd=""
 
-  while read command args; do
+   while read command args; do
     case "$command" in
     'menuentry')
-      grub_parse_name "$args"
+      # filter args for $... this is not great.
+      eval set -- "$(printf '%s' "$args" | sed 's/\$[^ ]*//g')"
+      entry_name="$1"
       ;;
     'linux'|'linux16'|'linuxefi')
-      # FIXME evaling append could go awry
-      echo "$args" | while read kernel append; do
-        echo kernel_image=\"${GRUBPREFIX}${kernel}\"
-        echo append=\"${append}\"
-      done
+      while read image append; do
+        entry_kernel_image="${GRUBPREFIX}$image"
+        entry_append="$append"
+      done <<< "$args"
       ;;
     'initrd'|'initrd16'|'initrdefi')
-      initrd_image=${GRUBPREFIX}${args}
+      entry_initrd="${GRUBPREFIX}$args"
       ;;
     esac
-  done
-
-  echo initrd=\"$initrd_image\"
+  done <<< "$data"
 }
 
 menu_show() {
