@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+
+set -eu
+
+PROGNAME=${0##*/}
+PROGVERSION="1.0"
+
+GRUBDATA=""
+GRUBROOT=""
+GRUBPREFIX=""
+MENUENTRY=()
+INITRDS=()
+KERNELS=()
+KARGS=()
+# Mapping from grubs internal index to our menu index
+GRUBINDEX=()
+SELECTED=0
+
+main() {
+  local showmenu=1
+
+  local args=$(getopt -o v -l version,root:,auto -n "$PROGNAME" -- "$@")
+  [ $? != 0 ] && exit 2
+  eval set -- $args
+
+  while true; do
+    case "$1" in
+    '--version'|'-v')
+      echo "$PROGNAME version $PROGVERSION"
+      exit 0
+      ;;
+    '--root')
+      GRUBROOT="$2"
+      shift 2
+      continue
+      ;;
+    '--auto')
+      showmenu=0
+      shift
+      continue
+      ;;
+    '--')
+      shift
+      break
+      ;;
+    *)
+      echo 'Internal error!' >&2
+      exit 1
+    esac
+  done
+
+  if [[ -z $GRUBROOT ]]; then
+    GRUBROOT=$(grub_root_probe)
+  fi
+
+  mountpoint -q /boot && GRUBPREFIX=/boot || GRUBPREFIX=
+  GRUBDATA=$(< "$GRUBROOT/grub.cfg")
+
+  grub_cfg_load
+  grub_default_load
+  [[ 1 = $showmenu ]] && menu_show
+  kexec_load
+}
+
+grub_root_probe() {
+  # Debian and friends
+  if [[ -f /boot/grub/grub.cfg ]]; then
+    echo "/boot/grub"
+  # RHEL and friends
+  elif [[ -f /boot/efi/EFI/redhat/grub.cfg ]]; then
+    echo "/boot/efi/EFI/redhat"
+  elif [[ -f /boot/grub2/grub.cfg ]]; then
+    echo "/boot/grub2"
+  else
+    echo "No grub.cfg could be located." 1>&2
+    exit 1
+  fi
+}
+
+grub_cfg_load() {
+  local offsets=($(echo "$GRUBDATA" | grep -n '^[[:space:]]*menuentry[[:space:]]' | cut -d: -f1))
+  local menuindex=0
+  local begin=0
+  local length=0
+  local name=""
+  local kernel_image=""
+  local append=""
+  local initrd=""
+
+  for grubindex in ${!offsets[@]}; do
+    begin=${offsets[$grubindex]}
+    length=$(echo "$GRUBDATA" | tail -n+$begin | grep -n -m 1 '^[[:space:]]*}[[:space:]]*' | cut -d: -f1)
+
+    name=""
+    kernel_image=""
+    append=""
+    initrd=""
+
+    set +u
+    eval $(echo "$GRUBDATA" | tail -n+$begin | head -n$length | grub_parse_entry)
+    set -u
+
+    if [[ ! -z $kernel_image ]]; then
+      MENUENTRY+=("$name")
+      KERNELS+=("$kernel_image")
+      INITRDS+=("$initrd")
+      KARGS+=("$append")
+      # grub_default_load needs to map from name to menu index; grub index to menu index
+      GRUBINDEX[$grubindex]=$menuindex
+      menuindex=$(($menuindex + 1))
+    fi
+  done
+}
+
+grub_default_load() {
+  # Find the default
+  local entry=$(echo "$GRUBDATA" | awk '/set default/ {print $2}' | cut -d'"' -f2 | tail -1)
+  if [[ "$entry" = '${saved_entry}' ]]; then
+    entry=$(sed -ne 's/^saved_entry=//p' "$GRUBROOT/grubenv")
+  fi
+  if [[ -z "$entry" ]]; then
+    entry=0
+  fi
+
+  if [[ $entry =~ ^[0-9]+$ ]]; then
+    if [[ "${GRUBINDEX[$entry]+isset}" ]]; then
+      SELECTED="${GRUBINDEX[$entry]}"
+    fi
+  else
+    for index in "${!MENUENTRY[@]}"; do
+      if [[ "${MENUENTRY[$index]}" = "$entry" ]]; then
+        SELECTED=$index
+        continue
+      fi
+    done
+  fi
+}
+
+grub_parse_name() {
+  eval set -- "$1"
+  echo name=\"$1\"
+}
+
+grub_parse_entry() {
+  local initrd_image=
+
+  while read command args; do
+    case "$command" in
+    'menuentry')
+      grub_parse_name "$args"
+      ;;
+    'linux'|'linux16'|'linuxefi')
+      # FIXME evaling append could go awry
+      echo "$args" | while read kernel append; do
+        echo kernel_image=\"${GRUBPREFIX}${kernel}\"
+        echo append=\"${append}\"
+      done
+      ;;
+    'initrd'|'initrd16'|'initrdefi')
+      initrd_image=${GRUBPREFIX}${args}
+      ;;
+    esac
+  done
+
+  echo initrd=\"$initrd_image\"
+}
+
+menu_show() {
+  local wmenu=()
+
+  for index in "${!MENUENTRY[@]}"; do
+    wmenu+=("$index" "${MENUENTRY[$index]}")
+  done
+
+  SELECTED=$(whiptail \
+  --title 'KEXEC GRUB helper' \
+  --menu 'Select a GRUB entry' \
+  --notags \
+  --default-item "$SELECTED" \
+  25 85 16 -- \
+  "${wmenu[@]}" 3>&1 1>&2 2>&3)
+}
+
+kexec_load() {
+  local kernel_image="${KERNELS[$SELECTED]}"
+  local initrd="${INITRDS[$SELECTED]}"
+  local append="${KARGS[$SELECTED]}"
+  test -z "$append" && append="$(cat /proc/cmdline)"
+
+  printf 'Selected "%s"\n\n' "${MENUENTRY[$SELECTED]}"
+
+  if [[ -z "$kernel_image" ]]; then
+    echo "No kernel could be located." 1>&2
+    exit 1
+  fi
+
+  local kexec_args=('-l' "$kernel_image")
+  [[ -z "$initrd" ]] || kexec_args+=("--initrd=$initrd")
+  [[ -z "$append" ]] || kexec_args+=("--append=$append")
+
+  printf 'kernel  %s\n' "$kernel_image"
+  printf 'initrd  %s\n' "$initrd"
+  printf 'cmdline %s\n' "$append"
+
+  /sbin/kexec "${kexec_args[@]}"
+
+  echo
+  echo 'Ready to boot new kernel using "systemctl kexec"'
+}
+
+main "$@"

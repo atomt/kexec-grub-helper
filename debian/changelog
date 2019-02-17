@@ -1,0 +1,5 @@
+kexec-grub-helper (1) unstable; urgency=medium
+
+  * Initial release.
+
+ -- Andre Tomt <andre@tomt.net>  Sun, 17 Feb 2019 01:56:06 +0100

@@ -1,0 +1,14 @@
+Source: kexec-grub-helper
+Section: utils
+Priority: optional
+Maintainer: Andre Tomt <andre@tomt.net>
+Build-Depends: debhelper (>= 9.20160115)
+Standards-Version: 4.1.4
+
+Package: kexec-grub-helper
+Architecture: all
+Section: utils
+Priority: optional
+Depends: ${misc:Depends}, kexec-tools (>= 1:2.0.14-1)
+Description: Kexec helper
+ kexec helper for grub
