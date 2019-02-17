@@ -1,4 +1,4 @@
-# kexec-grub-helper
+# kexec GRUB helper
 
 kexec helper to load kernels from your systems GRUB configuration. It has a selector, supports grubenv defaults and stuff.
 
@@ -6,15 +6,15 @@ kexec allows for very spiffy reboots, bypassing firmware initialization entirely
 
 ## Usage
 
-Using menu selection
+Load kernel using a menu selection interface
 
 > kexec-load-grub
 
-Auto-select based what is configured as the default kernel
+Load kernel using auto-selection based what is currently configured as the default kernel
 
 > kexec-load-grub --auto
 
-And to boot into the loaded kernel, if using systemd
+Then boot into the loaded kernel. If using systemd, use systemctl
 
 > systemctl kexec
 
